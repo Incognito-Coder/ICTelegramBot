@@ -17,3 +17,5 @@ require_once('ICTelegramBot.php');</pre>
 <pre>define('API_KEY', "TOKEN");
 $bot = new ICBot();
 $bot->Initialize(API_KEY);</pre>
+<h2>License</h2>
+<p>The MIT License (MIT). Please see <a href="LICENSE.md">License File</a> for more information.</p>
