@@ -5,7 +5,7 @@ namespace TelegramBot;
 /**
  * @author Incognito Coder
  * @copyright 2020 ICDev
- * @version 1.1.5
+ * @version 1.1.6
  */
 class ICBot
 {
