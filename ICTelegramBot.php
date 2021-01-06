@@ -4,8 +4,8 @@ namespace TelegramBot;
 
 /**
  * @author Incognito Coder
- * @copyright 2020 ICDev
- * @version 1.1.6
+ * @copyright 2020-2021 ICDev
+ * @version 1.1.8
  */
 class ICBot
 {
@@ -299,7 +299,7 @@ class ICBot
     {
         return $this->Data['message']['chat']['title'];
     }
-    
+
     /**
      * @meta Check Is User Joined On Desired Chat.
      * @param string $chatid Fill With (username,id).
