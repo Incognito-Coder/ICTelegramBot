@@ -299,6 +299,17 @@ class ICBot
     {
         return $this->Data['message']['chat']['title'];
     }
+    
+    /**
+     * @meta Check Is User Joined On Desired Chat.
+     * @param string $chatid Fill With (username,id).
+     * @param string $userid Enter UserID.
+     */
+    function GetChatMember($chatid, $userid)
+    {
+        $check = json_decode(file_get_contents('https://api.telegram.org/bot' . API_KEY . "/getChatMember?chat_id=$chatid&user_id=" . $userid))->result->status;
+        return $check;
+    }
 
     const TEXT = 'text';
     const PHOTO = 'photo';
