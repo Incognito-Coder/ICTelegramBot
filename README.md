@@ -13,7 +13,7 @@ To learn how to create and set up a bot, please consult <a href="https://core.te
 </blockquote>
 <h2>Installation & Usage</h2>
 <pre>use TelegramBot\ICBot;
-require_once('ICTelegramBot.php');</pre>
+require('ICTelegramBot.php');</pre>
 <pre>define('API_KEY', "TOKEN");
 $bot = new ICBot();
 $bot->Initialize(API_KEY);</pre>
