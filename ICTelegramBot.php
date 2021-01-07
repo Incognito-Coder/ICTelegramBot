@@ -5,7 +5,7 @@ namespace TelegramBot;
 /**
  * @author Incognito Coder
  * @copyright 2020-2021 ICDev
- * @version 1.1.8
+ * @version 1.2.0
  */
 class ICBot
 {
@@ -174,6 +174,20 @@ class ICBot
             'disable_notification' => $notification,
             'reply_to_message_id' => $reply,
             'reply_markup' => $keyboard
+        ]);
+    }
+
+    /**
+     * @param mixed $chat Target ChatID.
+     * @param mixed $from Forward Message From ChatID.
+     * @param mixed $msgid Desired Message ID.
+     */
+    function ForwardMessage($chat, $from, $msgid)
+    {
+        BOT('ForwardMessage', [
+            'chat_id' => $chat,
+            'from_chat_id' => $from,
+            'message_id' => $msgid
         ]);
     }
 
