@@ -5,16 +5,34 @@ namespace TelegramBot;
 /**
  * @author Incognito Coder
  * @copyright 2020-2021 ICDev
- * @version 1.2.0
+ * @version 1.3.2
  */
 class ICBot
 {
+    const TEXT = 'text';
+    const PHOTO = 'photo';
+    const VIDEO = 'video';
+    const DOCUMENT = 'document';
+    const AUDIO = 'music';
+    const VOICE = 'voice';
+    const CALLBACK_QUERY = 'callback_query';
+    const INLINE_QUERY = 'inline_query';
     private $Data = [];
     private $Array = [];
 
     public function __construct()
     {
         $this->Data = $this->Update();
+    }
+
+    public function Update()
+    {
+        if (empty($this->Data)) {
+            $update = file_get_contents('php://input');
+            return json_decode($update, true);
+        } else {
+            return $this->Data;
+        }
     }
 
     /**
@@ -155,6 +173,30 @@ class ICBot
 
     /**
      * @param mixed $chat Target ChatID.
+     * @param string $file Audio To Send.
+     * @param string $caption Some Details About Voice (Optional)
+     * @param string $parse Must be HTML or MarkDown (Optional)
+     * @param integer $duration Duration of the voice message in seconds (Optional)
+     * @param boolean $notification Sends the message silently. Users will receive a notification with no sound (Optional)
+     * @param integer $reply If the message is a reply, ID of the original message (Optional)
+     * @param mixed $keyboard Put Variable or Leave It Null (Optional)
+     */
+    function SendVoice($chat, $file, $caption = null, $parse = null, $duration = null, $notification = null, $reply = null, $keyboard = null)
+    {
+        BOT('sendVoice', [
+            'chat_id' => $chat,
+            'voice' => $file,
+            'caption' => $caption,
+            'parse_mode' => $parse,
+            'duration' => $duration,
+            'disable_notification' => $notification,
+            'reply_to_message_id' => $reply,
+            'reply_markup' => $keyboard
+        ]);
+    }
+
+    /**
+     * @param mixed $chat Target ChatID.
      * @param string $file Document To Send.
      * @param string $caption Some Details About File (Optional)
      * @param string $parse Must be HTML or MarkDown (Optional)
@@ -174,6 +216,18 @@ class ICBot
             'disable_notification' => $notification,
             'reply_to_message_id' => $reply,
             'reply_markup' => $keyboard
+        ]);
+    }
+
+    /**
+     * @param mixed $chat Target ChatID.
+     * @param mixed $action Type of action to broadcast. Choose one, depending on what the user is about to receive: typing for text messages, upload_photo for photos, record_video or upload_video for videos, record_voice or upload_voice for voice notes, upload_document for general files, find_location for location data, record_video_note or upload_video_note for video notes.
+     */
+    function SendChatAction($chat, $action)
+    {
+        BOT('sendChatAction', [
+            'chat_id' => $chat,
+            'action' => $action
         ]);
     }
 
@@ -201,7 +255,7 @@ class ICBot
     }
 
     /**
-     * @param string $data Enter Buttons And Links As Json.
+     * @param string $json Enter Buttons And Links As Json.
      */
     public function MultiInlineKeyboard($json)
     {
@@ -217,21 +271,11 @@ class ICBot
     }
 
     /**
-     * @param string $data Enter Buttons As Json.
+     * @param string $json Enter Buttons As Json.
      */
     public function MultiKeyboard($json)
     {
         return json_encode(['keyboard' => $json, 'resize_keyboard' => true]);
-    }
-
-    public function Update()
-    {
-        if (empty($this->Data)) {
-            $update = file_get_contents('php://input');
-            return json_decode($update, true);
-        } else {
-            return $this->Data;
-        }
     }
 
     /**
@@ -325,12 +369,6 @@ class ICBot
         return $check;
     }
 
-    const TEXT = 'text';
-    const PHOTO = 'photo';
-    const VIDEO = 'video';
-    const DOCUMENT = 'document';
-    const AUDIO = 'music';
-
     /**
      * @meta Return Update Type.
      */
@@ -348,6 +386,9 @@ class ICBot
         if (isset($this->Data['message']['audio'])) {
             return self::AUDIO;
         }
+        if (isset($this->Data['message']['voice'])) {
+            return self::VOICE;
+        }
         if (isset($this->Data['message']['document'])) {
             return self::DOCUMENT;
         }
@@ -355,7 +396,7 @@ class ICBot
 
     /**
      * @meta Return Current FileID.
-     * @param string $type Fill With (photo,video,audio,document).
+     * @param string $type Fill With (photo,video,audio,voice,document).
      */
     public function GetFileID($type)
     {
@@ -369,22 +410,14 @@ class ICBot
             case 'audio';
                 $new = $this->Data['message']['audio']['file_id'];
                 break;
+            case 'voice';
+                $new = $this->Data['message']['voice']['file_id'];
+                break;
             case 'document';
                 $new = $this->Data['message']['document']['file_id'];
                 break;
         }
         return $new;
-    }
-
-    /**
-     * @param string $file_id Your FileID Stored On Telegram Servers.
-     */
-    public function GetFile($file_id)
-    {
-
-        $this->Array = get_defined_vars();
-        $download = json_decode(file_get_contents('https://api.telegram.org/bot' . API_KEY . '/getFile?file_id=' . $file_id), true);
-        return $download;
     }
 
     /**
@@ -410,6 +443,17 @@ class ICBot
         }
         $result = 'https://api.telegram.org/file/bot' . API_KEY . '/' . $new;
         return $result;
+    }
+
+    /**
+     * @param string $file_id Your FileID Stored On Telegram Servers.
+     */
+    public function GetFile($file_id)
+    {
+
+        $this->Array = get_defined_vars();
+        $download = json_decode(file_get_contents('https://api.telegram.org/bot' . API_KEY . '/getFile?file_id=' . $file_id), true);
+        return $download;
     }
 
     /**
@@ -479,9 +523,6 @@ class ICBot
         }
         return $return;
     }
-
-    const CALLBACK_QUERY = 'callback_query';
-    const INLINE_QUERY = 'inline_query';
 
     /**
      * @return string Updates Type ['callback_query','inline_query'].
