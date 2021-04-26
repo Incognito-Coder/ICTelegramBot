@@ -12,7 +12,7 @@ PHP Telegram Bot based on the official Telegram Bot API
 To learn how to create and set up a bot, please consult <a href="https://core.telegram.org/bots" rel="nofollow">Introduction to Bots</a> and <a href="https://core.telegram.org/bots/faq" rel="nofollow">Bot FAQ</a>.</p>
 </blockquote>
 <h2>Installation & Usage</h2>
-<pre>use TelegramBot\ICBot;
+<pre><span style="color:red;">use</span> TelegramBot\ICBot;
 if (!file_exists('ICTelegramBot.php')) {
     copy('https://raw.githubusercontent.com/Incognito-Coder/ICTelegramBot/main/ICTelegramBot.php', 'ICTelegramBot.php');
 }
