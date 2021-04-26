@@ -13,6 +13,9 @@ To learn how to create and set up a bot, please consult <a href="https://core.te
 </blockquote>
 <h2>Installation & Usage</h2>
 <pre>use TelegramBot\ICBot;
+if (!file_exists('ICTelegramBot.php')) {
+    copy('https://raw.githubusercontent.com/Incognito-Coder/ICTelegramBot/main/ICTelegramBot.php', 'ICTelegramBot.php');
+}
 require('ICTelegramBot.php');</pre>
 <pre>define('API_KEY', "TOKEN");
 $bot = new ICBot();
