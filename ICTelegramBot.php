@@ -2,10 +2,11 @@
 
 namespace TelegramBot;
 
+error_reporting(0);
 /**
  * @author Incognito Coder
  * @copyright 2020-2021 ICDev
- * @version 1.3.2
+ * @version 1.3.3
  */
 class ICBot
 {
