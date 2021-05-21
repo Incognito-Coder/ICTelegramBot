@@ -19,9 +19,8 @@ if (!file_exists('ICTelegramBot.php')) {
     copy('https://raw.githubusercontent.com/Incognito-Coder/ICTelegramBot/main/ICTelegramBot.php', 'ICTelegramBot.php');
 }
 require('ICTelegramBot.php');
-define('API_KEY', "TOKEN");
 $bot = new ICBot();
-$bot->Initialize(API_KEY);
+$bot->Initialize("TOKEN");
 ```
 
 <h2>License</h2>
