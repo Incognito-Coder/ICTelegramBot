@@ -6,7 +6,7 @@ error_reporting(0);
 /**
  * @author Incognito Coder
  * @copyright 2020-2021 ICDev
- * @version 1.3.3
+ * @version 1.4.7
  */
 class ICBot
 {
@@ -56,6 +56,15 @@ class ICBot
                 return json_decode($res);
             }
         }
+    }
+
+    /**
+     * @meta This Function Easily Sets WebHook.
+     * @param $Input Enter Url.
+     */
+    function SetWebHook($Input)
+    {
+        BOT('setWebhook', ['url' => $Input]);
     }
 
     /**
@@ -277,6 +286,14 @@ class ICBot
     public function MultiKeyboard($json)
     {
         return json_encode(['keyboard' => $json, 'resize_keyboard' => true]);
+    }
+
+    /**
+     * @meta Remove Keyboard.
+     */
+    public function RemoveKeyboard()
+    {
+        return json_encode(['remove_keyboard' => true]);
     }
 
     /**
@@ -563,5 +580,42 @@ class ICBot
             'inline_query_id' => $id,
             'results' => json_encode($json)
         ]);
+    }
+
+    /**
+     * @meta Pin A Message In Chat.
+     * @param mixed $chat Where You Want To Pin Message.
+     * @param int $msgid Identifier Of A Message To Pin.
+     * @param boolean $notification Pass True, if it is not necessary to send a notification to all chat members about the new pinned message. Notifications are always disabled in channels and private chats.
+     */
+    function PinMessage($chat, $msgid, $notification = false)
+    {
+        BOT('pinChatMessage', [
+            'chat_id' => $chat,
+            'message_id' => $msgid,
+            'disable_notification' => $notification
+        ]);
+    }
+
+    /**
+     * @meta Clear Pinned Message In Chat.
+     * @param mixed $chat Where You Want To Remove Pinned Message.
+     * @param int $msgid Identifier Of A Message To Pin.
+     */
+    function UnPinMessage($chat, $msgid)
+    {
+        BOT('pinChatMessage', [
+            'chat_id' => $chat,
+            'message_id' => $msgid
+        ]);
+    }
+
+    /**
+     * @meta Remove All Pinned Messages In Chat.
+     * @param mixed $chat Where You Want To Remove Pinned Message.
+     */
+    function UnPinAllChatMessages($chat)
+    {
+        BOT('pinChatMessage', ['chat_id' => $chat]);
     }
 }
