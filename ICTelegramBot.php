@@ -109,6 +109,18 @@ class ICBot
 
     /**
      * @param mixed $chat Target ChatID.
+     * @param int $msgid ID of Message.
+     */
+    function DeleteMessage($chat, $msgid)
+    {
+        BOT('deleteMessage', [
+            'chat_id' => $chat,
+            'message_id' => $msgid
+        ]);
+    }
+
+    /**
+     * @param mixed $chat Target ChatID.
      * @param string $file Photo To Send.
      * @param string $caption Some Details About Image (Optional)
      * @param string $parse Must be HTML or MarkDown (Optional)
@@ -377,6 +389,14 @@ class ICBot
     }
 
     /**
+     * @meta Return Identifier Of Forwarded Message At Reply.
+     */
+    public function ForwarderID()
+    {
+        return $this->Data['message']['reply_to_message']['forward_from']['id'];
+    }
+
+    /**
      * @meta Check Is User Joined On Desired Chat.
      * @param string $chatid Fill With (username,id).
      * @param string $userid Enter UserID.
@@ -502,7 +522,7 @@ class ICBot
 
     /**
      * @meta Return CallBack Details.
-     * @param string $select Fill With (id,data,chatid,msgid).
+     * @param string $select Fill With (id,from,data,chatid,msgid).
      * @return mixed
      */
     public function CallBackQuery($select)
@@ -510,6 +530,9 @@ class ICBot
         switch ($select) {
             case 'id';
                 $return = $this->Data['callback_query']['id'];
+                break;
+            case 'from';
+                $return = $this->Data['callback_query']['from']['id'];
                 break;
             case 'data';
                 $return = $this->Data['callback_query']['data'];
