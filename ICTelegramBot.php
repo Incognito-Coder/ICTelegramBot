@@ -6,7 +6,7 @@ error_reporting(0);
 /**
  * @author Incognito Coder
  * @copyright 2020-2021 ICDev
- * @version 1.4.7
+ * @version 1.5.2
  */
 class ICBot
 {
@@ -16,6 +16,7 @@ class ICBot
     const DOCUMENT = 'document';
     const AUDIO = 'music';
     const VOICE = 'voice';
+    const CONTACT = 'contact';
     const CALLBACK_QUERY = 'callback_query';
     const INLINE_QUERY = 'inline_query';
     private $Data = [];
@@ -430,6 +431,9 @@ class ICBot
         if (isset($this->Data['message']['document'])) {
             return self::DOCUMENT;
         }
+        if (isset($this->Data['message']['contact'])) {
+            return self::CONTACT;
+        }
     }
 
     /**
@@ -515,6 +519,61 @@ class ICBot
                 break;
             case 'size';
                 $new = $this->Data['message']['audio']['file_size'];
+                break;
+        }
+        return $new;
+    }
+
+
+    /**
+     * @meta Return Document Details.
+     * @param string $value Fill With (name,id,size,unique,thumb,mime).
+     */
+    public function Document($value)
+    {
+        switch ($value) {
+            case 'name';
+                $new = $this->Data['message']['document']['file_name'];
+                break;
+            case 'id';
+                $new = $this->Data['message']['document']['file_id'];
+                break;
+            case 'mime';
+                $new = $this->Data['message']['document']['mime_type'];
+                break;
+            case 'thumb';
+                $new = $this->Data['message']['document']['thumb'];
+                break;
+            case 'size';
+                $new = $this->Data['message']['document']['file_size'];
+                break;
+            case 'unique';
+                $new = $this->Data['message']['document']['file_unique_id'];
+        }
+        return $new;
+    }
+
+    /**
+     * @meta Return Contact Details.
+     * @param string $value Fill With (phone,first,last,id,vcard).
+     */
+    public function Contact($value)
+    {
+        switch ($value) {
+            case 'phone';
+                $new = $this->Data['message']['contact']['phone_number'];
+                break;
+            case 'first';
+                $new = $this->Data['message']['contact']['first_name'];
+                break;
+            case 'last';
+                $new = $this->Data['message']['contact']['last_name'];
+                break;
+            case 'id';
+                $new = $this->Data['message']['contact']['user_id'];
+                break;
+            case 'vcard';
+                $new = $this->Data['message']['contact']['vcard'];
                 break;
         }
         return $new;
@@ -627,7 +686,7 @@ class ICBot
      */
     function UnPinMessage($chat, $msgid)
     {
-        BOT('pinChatMessage', [
+        BOT('unpinAllChatMessages', [
             'chat_id' => $chat,
             'message_id' => $msgid
         ]);
@@ -639,6 +698,6 @@ class ICBot
      */
     function UnPinAllChatMessages($chat)
     {
-        BOT('pinChatMessage', ['chat_id' => $chat]);
+        BOT('unpinAllChatMessages', ['chat_id' => $chat]);
     }
 }
