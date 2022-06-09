@@ -12,10 +12,16 @@ PHP Telegram Bot based on the official Telegram Bot API
 To learn how to create and set up a bot, please consult <a href="https://core.telegram.org/bots" rel="nofollow">Introduction to Bots</a> and <a href="https://core.telegram.org/bots/faq" rel="nofollow">Bot FAQ</a>.</p>
 </blockquote>
 <h2>Installation & Usage</h2>
-<pre>use TelegramBot\ICBot;
-require_once('ICTelegramBot.php');</pre>
-<pre>define('API_KEY', "TOKEN");
+
+```php
+use TelegramBot\ICBot;
+if (!file_exists('ICTelegramBot.php')) {
+    copy('https://raw.githubusercontent.com/Incognito-Coder/ICTelegramBot/main/ICTelegramBot.php', 'ICTelegramBot.php');
+}
+require('ICTelegramBot.php');
 $bot = new ICBot();
-$bot->Initialize(API_KEY);</pre>
+$bot->Initialize("TOKEN");
+```
+
 <h2>License</h2>
 <p>The MIT License (MIT). Please see <a href="LICENSE.md">License File</a> for more information.</p>
