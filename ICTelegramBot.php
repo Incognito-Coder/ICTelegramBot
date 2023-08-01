@@ -5,8 +5,8 @@ namespace TelegramBot;
 error_reporting(0);
 /**
  * @author Incognito Coder
- * @copyright 2020-2022 ICDev
- * @version 1.5.3
+ * @copyright 2020-2023 ICDev
+ * @version 1.5.4
  */
 class ICBot
 {
@@ -103,6 +103,24 @@ class ICBot
             'chat_id' => $chat,
             'message_id' => $msgid,
             'text' => $text,
+            'parse_mode' => $parse,
+            'reply_markup' => $keyboard
+        ]);
+    }
+
+    /**
+     * @param mixed $chat Target ChatID.
+     * @param int $msgid ID of Message.
+     * @param string $caption New caption of the message, 0-1024 characters after entities parsing.
+     * @param boolean $parse Must be HTML or MarkDown (Optional)
+     * @param null $keyboard Put Variable or Leave It Null (Optional)
+     */
+    function EditMessageCaption($chat, $msgid, $caption, $parse, $keyboard = null)
+    {
+        BOT('editMessageText', [
+            'chat_id' => $chat,
+            'message_id' => $msgid,
+            'caption' => $caption,
             'parse_mode' => $parse,
             'reply_markup' => $keyboard
         ]);
