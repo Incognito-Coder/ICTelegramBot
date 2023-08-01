@@ -117,7 +117,7 @@ class ICBot
      */
     function EditMessageCaption($chat, $msgid, $caption, $parse, $keyboard = null)
     {
-        BOT('editMessageText', [
+        BOT('editMessageCaption', [
             'chat_id' => $chat,
             'message_id' => $msgid,
             'caption' => $caption,
