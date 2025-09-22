@@ -5,8 +5,8 @@ namespace TelegramBot;
 error_reporting(0);
 /**
  * @author Incognito Coder
- * @copyright 2020-2023 ICDev
- * @version 1.5.4
+ * @copyright 2020-2025 ICDev
+ * @version 1.5.5
  */
 class ICBot
 {
@@ -269,6 +269,18 @@ class ICBot
         BOT('sendChatAction', [
             'chat_id' => $chat,
             'action' => $action
+        ]);
+    }
+
+    /**
+     * @param mixed $chat Target ChatID.
+     * @param array $media Array of media to be sent.
+     */
+    function SendMediaGroup($chat, $media)
+    {
+        BOT('sendMediaGroup', [
+            'chat_id' => $chat,
+            'media' => json_encode($media)
         ]);
     }
 
