@@ -5,8 +5,8 @@ namespace TelegramBot;
 error_reporting(0);
 /**
  * @author Incognito Coder
- * @copyright 2020-2025 ICDev
- * @version 1.5.5
+ * @copyright 2020-2026 ICDev
+ * @version 1.5.6
  */
 class ICBot
 {
@@ -40,9 +40,18 @@ class ICBot
     /**
      * @param string $Token Your Bot API-KEY, Get It From @BotFather
      */
-    public function Initialize($Token)
+    public function Initialize($Token, $Proxy = null, $ProxyAuth = null, $ProxyType = null)
     {
         define('API_KEY', $Token);
+        if (!empty($Proxy)) {
+            $GLOBALS['ICBOT_PROXY'] = $Proxy;
+        }
+        if (!empty($ProxyAuth)) {
+            $GLOBALS['ICBOT_PROXY_AUTH'] = $ProxyAuth; // format: "username:password"
+        }
+        if (!empty($ProxyType)) {
+            $GLOBALS['ICBOT_PROXY_TYPE'] = strtoupper($ProxyType); // e.g. HTTP, SOCKS5, SOCKS4
+        }
         function BOT($Method, $Data = [])
         {
             $url = "https://api.telegram.org/bot" . API_KEY . "/" . $Method;
@@ -50,6 +59,25 @@ class ICBot
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $Data);
+            if (!empty($GLOBALS['ICBOT_PROXY'])) {
+                curl_setopt($ch, CURLOPT_PROXY, $GLOBALS['ICBOT_PROXY']);
+                if (!empty($GLOBALS['ICBOT_PROXY_AUTH'])) {
+                    curl_setopt($ch, CURLOPT_PROXYUSERPWD, $GLOBALS['ICBOT_PROXY_AUTH']);
+                }
+                if (!empty($GLOBALS['ICBOT_PROXY_TYPE'])) {
+                    switch ($GLOBALS['ICBOT_PROXY_TYPE']) {
+                        case 'SOCKS5':
+                            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+                            break;
+                        case 'SOCKS4':
+                            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS4);
+                            break;
+                        default:
+                            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+                            break;
+                    }
+                }
+            }
             $res = curl_exec($ch);
             if (curl_error($ch)) {
                 var_dump(curl_error($ch));
@@ -99,7 +127,7 @@ class ICBot
      */
     function EditMessage($chat, $msgid, $text, $parse, $keyboard = null)
     {
-        BOT('editMessageText', [
+        return BOT('editMessageText', [
             'chat_id' => $chat,
             'message_id' => $msgid,
             'text' => $text,
@@ -117,7 +145,7 @@ class ICBot
      */
     function EditMessageCaption($chat, $msgid, $caption, $parse, $keyboard = null)
     {
-        BOT('editMessageCaption', [
+        return BOT('editMessageCaption', [
             'chat_id' => $chat,
             'message_id' => $msgid,
             'caption' => $caption,
