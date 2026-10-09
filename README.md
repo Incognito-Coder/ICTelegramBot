@@ -12,13 +12,14 @@ A lightweight, zero-dependency, modern PHP library for building Telegram bots ba
 
 - **Zero External Dependencies**: Single-file plug-and-play architecture with clean native cURL implementation.
 - **Latest Bot API Support (8.3+)**:
-  - **Telegram Stars & Monetization**: `sendPaidMedia`, `refundStarPayment`, `getStarTransactions`, and star subscriptions.
+  - **Telegram Stars & Monetization**: `sendPaidMedia`, `sendInvoice`, `createInvoiceLink` (including recurring Star subscriptions), `refundStarPayment`, and `getStarTransactions`.
   - **Reactions & Message Effects**: `setMessageReaction`, animated effects (`message_effect_id`), and rich replies.
-  - **Replies 2.0**: Support for `reply_parameters` with quoting (`quote`, `quote_position`) and `link_preview_options`.
+  - **Replies 2.0 & Quotes**: Support for `reply_parameters` with quoting (`quote`, `quote_position`) and `link_preview_options`.
   - **Forum Topics**: Full management for supergroups (`createForumTopic`, `editForumTopic`, `closeForumTopic`, `unpinAllForumTopicMessages`, etc.).
   - **Verification API (8.2+)**: `verifyUser`, `verifyChat`, `removeUserVerification`, `removeChatVerification`.
   - **Gifts (8.2 - 8.3+)**: `sendGift`, `getAvailableGifts` with channel and upgrade options.
   - **Chat Moderation & Administration**: Member restriction, bans, custom admin titles, invite link management, and batch deletion (`deleteMessages`).
+- **Webhook Security**: Built-in secret token validation with `VerifyWebhookSecret()`.
 - **Proxy Support**: Native HTTP, SOCKS4, and SOCKS5 proxy routing with authentication.
 - **Auto Local File Uploads**: Automatically converts local file paths to `CURLFile` for photos, videos, audio, voice notes, animations, and documents.
 - **Smart Update Parsing**: Built-in extractors for chat IDs, user IDs, topics, media IDs, and command arguments (`IsCommand`, `GetCommand`, `GetCommandArgs`).
@@ -29,7 +30,22 @@ A lightweight, zero-dependency, modern PHP library for building Telegram bots ba
 
 ## 🚀 Installation & Getting Started
 
-### Direct Download
+### Option 1: Via Composer (Recommended)
+
+```bash
+composer require incognito-coder/ic-telegram-bot
+```
+
+```php
+require_once 'vendor/autoload.php';
+
+use TelegramBot\ICBot;
+
+$bot = new ICBot('YOUR_BOT_TOKEN');
+```
+
+### Option 2: Direct Download
+
 Download [`ICTelegramBot.php`](file:///e:/Projects/Telegram/ICTelegramBot.php) directly into your project:
 
 ```php
@@ -72,9 +88,18 @@ $bot->Initialize('TOKEN', null, null, null, 'http://localhost:8081');
 
 ---
 
+## 📁 Examples Included
+
+Complete runnable examples are provided in the [`examples/`](file:///e:/Projects/Telegram/examples/) folder:
+- [**`examples/echo_bot.php`**](file:///e:/Projects/Telegram/examples/echo_bot.php): Webhook bot with command handling and secret token security.
+- [**`examples/polling_bot.php`**](file:///e:/Projects/Telegram/examples/polling_bot.php): CLI long-polling runner for testing without a domain.
+- [**`examples/keyboard_bot.php`**](file:///e:/Projects/Telegram/examples/keyboard_bot.php): Inline keyboards, mini apps, callbacks, and custom reply menus.
+
+---
+
 ## 📖 Usage Examples
 
-### 1. Simple Webhook Echo Bot
+### 1. Webhook Echo Bot with Secret Token Security
 
 ```php
 use TelegramBot\ICBot;
@@ -82,6 +107,12 @@ use TelegramBot\ICBot;
 require_once 'ICTelegramBot.php';
 
 $bot = new ICBot('YOUR_BOT_TOKEN');
+
+// Validate X-Telegram-Bot-Api-Secret-Token
+if (!$bot->VerifyWebhookSecret('MY_SECRET_KEY')) {
+    http_response_code(403);
+    exit('Unauthorized');
+}
 
 $chatId = $bot->GetChatID();
 $text   = $bot->GetText();
@@ -156,17 +187,28 @@ $replyMarkup = $bot->BuildReplyKeyboard([
 $bot->SendMessage($chatId, "Please choose:", null, null, null, null, $replyMarkup);
 ```
 
-### 5. Answering Callbacks & Inline Queries
+### 5. Telegram Stars & Payments
 
 ```php
-if ($bot->GetUpdateType() === ICBot::CALLBACK_QUERY) {
-    $callbackId = $bot->CallBackQuery('id');
-    $data       = $bot->CallBackQuery('data');
+// Send an invoice for Telegram Stars (XTR)
+$bot->SendInvoice(
+    $chatId,
+    'Premium VIP Access',
+    'Get 1 month access to premium features',
+    'payload_vip_month',
+    'XTR',
+    [['label' => 'VIP Access', 'amount' => 50]] // 50 Telegram Stars
+);
 
-    if ($data === 'like_post') {
-        $bot->AnswerCallback($callbackId, 'Thanks for your feedback!', true);
-    }
-}
+// Create recurring Star subscription link (Bot API 8.0+)
+$link = $bot->CreateInvoiceLink(
+    'Monthly Channel Subscription',
+    'VIP Channel Membership',
+    'payload_sub',
+    'XTR',
+    [['label' => 'Subscription', 'amount' => 100]],
+    ['subscription_period' => 2592000] // 30 days in seconds
+);
 ```
 
 ### 6. Message Reactions & Forum Topics
@@ -204,6 +246,7 @@ $response = $bot->Endpoint('sendChatAction', [
 | **Setup & Updates** | `Initialize($token, $proxy, $auth, $type, $apiUrl)` | Configure bot and proxy |
 | | `SetWebHook($url, $options)` | Register webhook endpoint |
 | | `DeleteWebHook($dropUpdates)` | Remove webhook |
+| | `VerifyWebhookSecret($expectedToken)` | Validate secret token header |
 | | `GetUpdates($options)` | Long-polling updates |
 | | `GetMe()` | Get bot info (`User` object) |
 | **Messaging** | `SendMessage($chat, $text, $parse, $preview, $notify, $reply, $kbd, $extra)` | Send text message |
@@ -221,6 +264,10 @@ $response = $bot->Endpoint('sendChatAction', [
 | | `SendDocument($chat, $doc, ...)` | Send document/file |
 | | `SendMediaGroup($chat, $media)` | Send photo/video album |
 | | `SendPaidMedia($chat, $stars, $media)` | Send Telegram Stars paid media |
+| **Payments & Stars** | `SendInvoice($chat, $title, $desc, $payload, $currency, $prices)` | Send payment / Star invoice |
+| | `CreateInvoiceLink($title, $desc, $payload, $currency, $prices)` | Create payment / subscription link |
+| | `AnswerPreCheckoutQuery($id, $ok, $err)` | Confirm / reject order |
+| | `RefundStarPayment($user, $charge_id)` | Refund Telegram Star payment |
 | **Moderation** | `BanChatMember($chat, $user, $until, $revoke)` | Ban member |
 | | `UnbanChatMember($chat, $user)` | Unban member |
 | | `RestrictChatMember($chat, $user, $perms, ...)` | Restrict permissions |

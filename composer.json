@@ -1,0 +1,41 @@
+{
+  "name": "incognito-coder/ic-telegram-bot",
+  "description": "Lightweight, zero-dependency PHP Telegram Bot library based on the official Telegram Bot API (supporting Bot API 7.x - 8.3+)",
+  "keywords": [
+    "telegram",
+    "bot",
+    "telegram-bot",
+    "telegram-bot-api",
+    "telegram-stars",
+    "php",
+    "php8"
+  ],
+  "homepage": "https://github.com/Incognito-Coder/ICTelegramBot",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Incognito Coder",
+      "email": "mr.alireza.ahmand@gmail.com",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/Incognito-Coder/ICTelegramBot/issues",
+    "source": "https://github.com/Incognito-Coder/ICTelegramBot"
+  },
+  "require": {
+    "php": ">=7.4",
+    "ext-curl": "*",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "TelegramBot\\": ""
+    },
+    "files": [
+      "ICTelegramBot.php"
+    ]
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

@@ -574,6 +574,18 @@ class ICBot
         return $this->Request('getUpdates', $Options);
     }
 
+    /**
+     * Verifies that the incoming request has a valid X-Telegram-Bot-Api-Secret-Token header.
+     *
+     * @param string $expectedSecretToken Secret token previously set in SetWebHook
+     * @return bool
+     */
+    public function VerifyWebhookSecret($expectedSecretToken)
+    {
+        $header = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? null;
+        return !empty($header) && hash_equals($expectedSecretToken, $header);
+    }
+
     // =========================================================================
     // SENDING MESSAGES & MEDIA
     // =========================================================================
@@ -2111,6 +2123,92 @@ class ICBot
             'telegram_payment_charge_id' => $telegram_payment_charge_id,
             'is_canceled' => (bool)$is_canceled,
         ]);
+    }
+
+    /**
+     * Sends an invoice for payments or Telegram Stars.
+     *
+     * @param mixed $chat Target ChatID
+     * @param string $title Product name, 1-32 characters
+     * @param string $description Product description, 1-255 characters
+     * @param string $payload Bot-defined invoice payload, 1-128 bytes
+     * @param string $currency Three-letter ISO 4217 currency code or 'XTR' for Telegram Stars
+     * @param array $prices Price breakdown, an array of LabeledPrice objects [['label'=>'Item', 'amount'=>100]]
+     * @param array $extra Additional parameters (provider_token, max_tip_amount, suggested_tip_amounts, start_parameter, photo_url, need_name, need_phone_number, need_email, need_shipping_address, is_flexible, reply_parameters, reply_markup)
+     * @return mixed
+     */
+    public function SendInvoice($chat, $title, $description, $payload, $currency, array $prices, array $extra = [])
+    {
+        $data = [
+            'chat_id' => $chat,
+            'title' => $title,
+            'description' => $description,
+            'payload' => $payload,
+            'currency' => $currency,
+            'prices' => $prices,
+        ];
+        return $this->Request('sendInvoice', array_merge($data, $extra));
+    }
+
+    /**
+     * Creates an HTTP invoice link for Telegram payments or Star subscriptions.
+     *
+     * @param string $title Product name, 1-32 characters
+     * @param string $description Product description, 1-255 characters
+     * @param string $payload Bot-defined invoice payload, 1-128 bytes
+     * @param string $currency Three-letter ISO 4217 currency code or 'XTR' for Telegram Stars
+     * @param array $prices Price breakdown, an array of LabeledPrice objects
+     * @param array $extra Additional options (subscription_period for Star subscriptions, provider_token, business_connection_id)
+     * @return mixed
+     */
+    public function CreateInvoiceLink($title, $description, $payload, $currency, array $prices, array $extra = [])
+    {
+        $data = [
+            'title' => $title,
+            'description' => $description,
+            'payload' => $payload,
+            'currency' => $currency,
+            'prices' => $prices,
+        ];
+        return $this->Request('createInvoiceLink', array_merge($data, $extra));
+    }
+
+    /**
+     * Answers a shipping query for flexible invoices.
+     *
+     * @param string $shipping_query_id
+     * @param bool $ok
+     * @param array $shipping_options
+     * @param string|null $error_message
+     * @return mixed
+     */
+    public function AnswerShippingQuery($shipping_query_id, $ok, array $shipping_options = [], $error_message = null)
+    {
+        $data = [
+            'shipping_query_id' => $shipping_query_id,
+            'ok' => (bool)$ok,
+            'shipping_options' => $shipping_options,
+            'error_message' => $error_message,
+        ];
+        return $this->Request('answerShippingQuery', $data);
+    }
+
+    /**
+     * Answers a pre-checkout query to confirm or decline an order.
+     *
+     * @param string $pre_checkout_query_id
+     * @param bool $ok
+     * @param string|null $error_message
+     * @return mixed
+     */
+    public function AnswerPreCheckoutQuery($pre_checkout_query_id, $ok, $error_message = null)
+    {
+        $data = [
+            'pre_checkout_query_id' => $pre_checkout_query_id,
+            'ok' => (bool)$ok,
+            'error_message' => $error_message,
+        ];
+        return $this->Request('answerPreCheckoutQuery', $data);
     }
 
     // =========================================================================
