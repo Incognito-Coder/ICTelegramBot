@@ -10,7 +10,7 @@ error_reporting(0);
  *
  * @author Incognito Coder
  * @copyright 2020-2026 ICDev
- * @version 2.0.0
+ * @version 2.0.1
  * @link https://github.com/Incognito-Coder/ICTelegramBot
  */
 class ICBot
@@ -153,6 +153,24 @@ class ICBot
     protected $AsArray = false;
 
     /**
+     * Reusable persistent cURL handle for keep-alive connection pooling
+     * @var \CurlHandle|resource|null
+     */
+    protected $curlHandle = null;
+
+    /**
+     * Reusable static cURL handle
+     * @var \CurlHandle|resource|null
+     */
+    protected static $staticCurlHandle = null;
+
+    /**
+     * Cache of answered callback query IDs to avoid duplicate calls
+     * @var array
+     */
+    protected static $answeredCallbacks = [];
+
+    /**
      * ICBot constructor.
      *
      * @param string|null $Token Bot token from @BotFather (optional, can also call Initialize)
@@ -171,14 +189,22 @@ class ICBot
     }
 
     /**
-     * Reads incoming update from webhook payload.
+     * Reads incoming update from webhook payload or CLI STDIN.
      *
      * @return array
      */
     public function Update()
     {
         if (empty($this->Data)) {
-            $input = file_get_contents('php://input');
+            $input = @file_get_contents('php://input');
+            if (empty($input) && PHP_SAPI === 'cli' && defined('STDIN')) {
+                $read = [STDIN];
+                $write = null;
+                $except = null;
+                if (@stream_select($read, $write, $except, 0, 50000) > 0) {
+                    $input = @stream_get_contents(STDIN);
+                }
+            }
             if (!empty($input)) {
                 $decoded = json_decode($input, true);
                 if (is_array($decoded)) {
@@ -309,9 +335,10 @@ class ICBot
             return false;
         }
 
-        $url = rtrim($this->ApiUrl, '/') . '/bot' . $token . '/' . $Method;
+        $apiUrl = $this->ApiUrl ?: ($GLOBALS['ICBOT_API_URL'] ?? 'https://api.telegram.org');
+        $url = rtrim($apiUrl, '/') . '/bot' . $token . '/' . $Method;
 
-        // Prepare parameters (convert nested arrays/objects to JSON strings for Telegram multipart/form-data)
+        $hasFile = false;
         $postData = [];
         foreach ($Data as $key => $value) {
             if ($value === null) {
@@ -319,15 +346,15 @@ class ICBot
             }
 
             if (is_array($value) || is_object($value)) {
-                // If it's a CURLFile, pass it directly
                 if ($value instanceof \CURLFile) {
+                    $hasFile = true;
                     $postData[$key] = $value;
                 } else {
                     $postData[$key] = json_encode($value);
                 }
             } elseif (is_string($value) && (in_array($key, ['photo', 'video', 'audio', 'voice', 'document', 'animation', 'sticker', 'video_note', 'thumb', 'thumbnail', 'certificate']) || substr($key, -5) === '_file')) {
-                // Automatically wrap existing local files into CURLFile if file exists on disk
                 if (!preg_match('/^(https?:\/\/|tg:\/\/)/i', $value) && file_exists($value) && is_file($value)) {
+                    $hasFile = true;
                     $postData[$key] = new \CURLFile($value);
                 } else {
                     $postData[$key] = $value;
@@ -337,14 +364,31 @@ class ICBot
             }
         }
 
-        $ch = curl_init();
+        if ($this->curlHandle === null || (!is_resource($this->curlHandle) && !is_object($this->curlHandle))) {
+            $this->curlHandle = curl_init();
+        }
+        $ch = $this->curlHandle;
+
+        // Dynamic timeout calculation
+        $timeout = 15;
+        if ($Method === 'answerCallbackQuery') {
+            $timeout = 3;
+        } elseif ($Method === 'getUpdates' && isset($Data['timeout'])) {
+            $timeout = (int)$Data['timeout'] + 10;
+        } elseif ($hasFile) {
+            $timeout = 60;
+        }
+
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_TCP_NODELAY, 1);
+        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
 
         // Proxy configuration
         $proxy = $this->Proxy ?: ($GLOBALS['ICBOT_PROXY'] ?? null);
@@ -369,6 +413,30 @@ class ICBot
                         break;
                 }
             }
+        } else {
+            curl_setopt($ch, CURLOPT_PROXY, '');
+        }
+
+        if ($hasFile) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, []);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        } else {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Accept: application/json'
+            ]);
+            $jsonPayload = [];
+            foreach ($postData as $k => $v) {
+                if (is_string($v) && isset($v[0]) && ($v[0] === '{' || $v[0] === '[')) {
+                    $testDecoded = json_decode($v, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $jsonPayload[$k] = $testDecoded;
+                        continue;
+                    }
+                }
+                $jsonPayload[$k] = $v;
+            }
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($jsonPayload));
         }
 
         $res = curl_exec($ch);
@@ -376,13 +444,12 @@ class ICBot
 
         if (curl_errno($ch)) {
             $this->LastError = curl_error($ch);
-            curl_close($ch);
+            @curl_close($this->curlHandle);
+            $this->curlHandle = null;
             return false;
         }
 
-        curl_close($ch);
         $this->LastError = null;
-
         $decoded = json_decode($res, $this->AsArray);
         $this->LastResponse = $decoded;
 
@@ -406,6 +473,7 @@ class ICBot
         $apiUrl = $GLOBALS['ICBOT_API_URL'] ?? 'https://api.telegram.org';
         $url = rtrim($apiUrl, '/') . '/bot' . $token . '/' . $Method;
 
+        $hasFile = false;
         $postData = [];
         foreach ($Data as $key => $value) {
             if ($value === null) {
@@ -413,25 +481,47 @@ class ICBot
             }
             if (is_array($value) || is_object($value)) {
                 if ($value instanceof \CURLFile) {
+                    $hasFile = true;
                     $postData[$key] = $value;
                 } else {
                     $postData[$key] = json_encode($value);
                 }
-            } elseif (is_string($value) && file_exists($value) && is_file($value) && !preg_match('/^(https?:\/\/)/i', $value)) {
-                $postData[$key] = new \CURLFile($value);
+            } elseif (is_string($value) && (in_array($key, ['photo', 'video', 'audio', 'voice', 'document', 'animation', 'sticker', 'video_note', 'thumb', 'thumbnail', 'certificate']) || substr($key, -5) === '_file')) {
+                if (!preg_match('/^(https?:\/\/|tg:\/\/)/i', $value) && file_exists($value) && is_file($value)) {
+                    $hasFile = true;
+                    $postData[$key] = new \CURLFile($value);
+                } else {
+                    $postData[$key] = $value;
+                }
             } else {
                 $postData[$key] = $value;
             }
         }
 
-        $ch = curl_init();
+        if (self::$staticCurlHandle === null || (!is_resource(self::$staticCurlHandle) && !is_object(self::$staticCurlHandle))) {
+            self::$staticCurlHandle = curl_init();
+        }
+        $ch = self::$staticCurlHandle;
+
+        $timeout = 15;
+        if ($Method === 'answerCallbackQuery') {
+            $timeout = 3;
+        } elseif ($Method === 'getUpdates' && isset($Data['timeout'])) {
+            $timeout = (int)$Data['timeout'] + 10;
+        } elseif ($hasFile) {
+            $timeout = 60;
+        }
+
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_TCP_NODELAY, 1);
+        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
 
         if (!empty($GLOBALS['ICBOT_PROXY'])) {
             curl_setopt($ch, CURLOPT_PROXY, $GLOBALS['ICBOT_PROXY']);
@@ -451,16 +541,48 @@ class ICBot
                         break;
                 }
             }
+        } else {
+            curl_setopt($ch, CURLOPT_PROXY, '');
+        }
+
+        if ($hasFile) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, []);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        } else {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Accept: application/json'
+            ]);
+            $jsonPayload = [];
+            foreach ($postData as $k => $v) {
+                if (is_string($v) && isset($v[0]) && ($v[0] === '{' || $v[0] === '[')) {
+                    $testDecoded = json_decode($v, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $jsonPayload[$k] = $testDecoded;
+                        continue;
+                    }
+                }
+                $jsonPayload[$k] = $v;
+            }
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($jsonPayload));
         }
 
         $res = curl_exec($ch);
         if (curl_errno($ch)) {
-            curl_close($ch);
+            @curl_close(self::$staticCurlHandle);
+            self::$staticCurlHandle = null;
             return false;
         }
 
-        curl_close($ch);
         return json_decode($res);
+    }
+
+    public function __destruct()
+    {
+        if ($this->curlHandle !== null && (is_resource($this->curlHandle) || is_object($this->curlHandle))) {
+            @curl_close($this->curlHandle);
+            $this->curlHandle = null;
+        }
     }
 
     /**
@@ -1803,7 +1925,7 @@ class ICBot
      * @param array|null $menu_button MenuButton object (e.g. ['type' => 'default'])
      * @return mixed
      */
-    public function SetChatMenuButton($chat = null, array $menu_button = null)
+    public function SetChatMenuButton($chat = null, ?array $menu_button = null)
     {
         $data = [];
         if ($chat !== null) {
@@ -2415,6 +2537,16 @@ class ICBot
      */
     public function AnswerCallback($callbackid, $text = null, $alert = false, array $extra = [])
     {
+        if (empty($callbackid)) {
+            return false;
+        }
+
+        // Avoid sending answerCallbackQuery multiple times for the same callback ID
+        if (isset(self::$answeredCallbacks[$callbackid])) {
+            return true;
+        }
+        self::$answeredCallbacks[$callbackid] = true;
+
         $data = [
             'callback_query_id' => $callbackid,
             'text' => $text,
