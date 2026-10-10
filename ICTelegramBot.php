@@ -10,7 +10,7 @@ error_reporting(0);
  *
  * @author Incognito Coder
  * @copyright 2020-2026 ICDev
- * @version 2.0.1
+ * @version 2.1.0
  * @link https://github.com/Incognito-Coder/ICTelegramBot
  */
 class ICBot
@@ -171,6 +171,18 @@ class ICBot
     protected static $answeredCallbacks = [];
 
     /**
+     * Polling running state flag
+     * @var bool
+     */
+    protected $isPolling = false;
+
+    /**
+     * Current polling update offset
+     * @var int
+     */
+    protected $currentOffset = 0;
+
+    /**
      * ICBot constructor.
      *
      * @param string|null $Token Bot token from @BotFather (optional, can also call Initialize)
@@ -219,14 +231,19 @@ class ICBot
     }
 
     /**
-     * Sets update data manually (useful for testing or long polling loops).
+     * Sets update data manually (accepts array or stdClass object).
+     * Automatically normalizes nested objects into accessible associative arrays.
      *
-     * @param array $update
+     * @param array|object $update
      * @return $this
      */
-    public function SetUpdate(array $update)
+    public function SetUpdate($update)
     {
-        $this->Data = $update;
+        if (is_object($update) || is_array($update)) {
+            $this->Data = json_decode(json_encode($update), true) ?: [];
+        } else {
+            $this->Data = [];
+        }
         return $this;
     }
 
@@ -686,14 +703,498 @@ class ICBot
     }
 
     /**
-     * Receives incoming updates using long polling.
+     * Receives incoming updates using Telegram Bot API getUpdates.
      *
-     * @param array $Options (offset, limit, timeout, allowed_updates)
-     * @return mixed
+     * @param array $Options Options: offset, limit, timeout, allowed_updates
+     * @return mixed Decoded Telegram response object/array or false on error
      */
     public function GetUpdates(array $Options = [])
     {
-        return $this->Request('getUpdates', $Options);
+        $response = $this->Request('getUpdates', $Options);
+        if ($response !== false) {
+            $result = is_object($response) ? ($response->result ?? null) : ($response['result'] ?? null);
+            if (is_array($result) && !empty($result)) {
+                $last = end($result);
+                $lastId = is_object($last) ? ($last->update_id ?? null) : ($last['update_id'] ?? null);
+                if ($lastId !== null) {
+                    $this->currentOffset = (int)$lastId + 1;
+                }
+            }
+        }
+        return $response;
+    }
+
+    /**
+     * Starts a modern, production-ready Long Polling event loop for CLI bots.
+     *
+     * Automatically handles:
+     * - Webhook removal & pending updates flushing
+     * - Automatic offset tracking & update confirmation
+     * - stdClass to associative array recursive normalization
+     * - Rate-limiting backoff (429 retry_after) & network reconnects
+     * - Cross-platform graceful shutdown on Ctrl+C (Windows & POSIX)
+     * - Persistent offset storage across bot restarts
+     *
+     * @param callable $callback Handler called for each update: function(ICBot $bot, array $update)
+     * @param array $options Configuration options:
+     *   - 'timeout' (int): Long polling timeout in seconds (default: 30)
+     *   - 'limit' (int): Max updates per request (1-100, default: 100)
+     *   - 'offset' (int): Starting update offset (default: 0 or loaded offset)
+     *   - 'allowed_updates' (array): Array of update types to receive (default: all)
+     *   - 'delete_webhook' (bool): Remove active webhook before polling (default: true)
+     *   - 'drop_pending_updates' (bool): Clear backlog of unprocessed updates (default: false)
+     *   - 'offset_file' (string|null): Path to file for persisting offset across restarts (default: null)
+     *   - 'sleep_on_error' (int|float): Seconds to sleep on network/API failure (default: 2)
+     *   - 'sleep_between_requests' (int): Microseconds to pause between requests (default: 0)
+     *   - 'max_iterations' (int): Max polling loop cycles before stopping, 0 = infinite (default: 0)
+     *   - 'stop_condition' (callable|null): Closure returning true to exit polling cleanly: function(ICBot $bot): bool
+     *   - 'on_start' (callable|null): Hook executed when polling begins: function(ICBot $bot)
+     *   - 'on_stop' (callable|null): Hook executed when polling ends: function(ICBot $bot)
+     *   - 'on_error' (callable|null): Hook executed on errors: function(string $error, ICBot $bot, mixed $response)
+     *   - 'on_tick' (callable|null): Hook executed after each polling cycle: function(ICBot $bot)
+     * @return $this
+     */
+    public function StartPolling(callable $callback, array $options = [])
+    {
+        $this->isPolling = true;
+        $this->RegisterPollingSignals();
+
+        // 1. Initial Webhook & Backlog Cleanup
+        $deleteWebhook = $options['delete_webhook'] ?? true;
+        $dropPending = !empty($options['drop_pending_updates']);
+        if ($deleteWebhook) {
+            $this->DeleteWebHook($dropPending);
+        }
+
+        // 2. Resolve Starting Offset
+        if (isset($options['offset'])) {
+            $this->currentOffset = (int)$options['offset'];
+        } elseif (!empty($options['offset_file']) && file_exists($options['offset_file'])) {
+            $this->LoadOffset($options['offset_file']);
+        }
+
+        $timeout = isset($options['timeout']) ? (int)$options['timeout'] : 30;
+        $limit = isset($options['limit']) ? max(1, min(100, (int)$options['limit'])) : 100;
+        $sleepOnError = isset($options['sleep_on_error']) ? (float)$options['sleep_on_error'] : 2.0;
+        $sleepBetween = isset($options['sleep_between_requests']) ? (int)$options['sleep_between_requests'] : 0;
+        $maxIterations = isset($options['max_iterations']) ? (int)$options['max_iterations'] : 0;
+        $allowedUpdates = $options['allowed_updates'] ?? null;
+        $offsetFile = $options['offset_file'] ?? null;
+
+        // Inspect callback signature to support both ($bot, $update) and ($update, $bot)
+        $firstParamIsUpdate = false;
+        if (is_object($callback) && ($callback instanceof \Closure)) {
+            $ref = new \ReflectionFunction($callback);
+            $params = $ref->getParameters();
+            if (!empty($params)) {
+                $pName = strtolower($params[0]->getName());
+                if ($pName === 'update' || $pName === 'data' || ($params[0]->hasType() && $params[0]->getType()->getName() === 'array')) {
+                    $firstParamIsUpdate = true;
+                }
+            }
+        }
+
+        if (isset($options['on_start']) && is_callable($options['on_start'])) {
+            call_user_func($options['on_start'], $this);
+        }
+
+        $iteration = 0;
+
+        while ($this->isPolling) {
+            if ($maxIterations > 0 && $iteration >= $maxIterations) {
+                break;
+            }
+            $iteration++;
+
+            if (isset($options['stop_condition']) && is_callable($options['stop_condition'])) {
+                if (call_user_func($options['stop_condition'], $this) === true) {
+                    break;
+                }
+            }
+
+            $params = [
+                'offset'  => $this->currentOffset,
+                'limit'   => $limit,
+                'timeout' => $timeout,
+            ];
+            if (!empty($allowedUpdates)) {
+                $params['allowed_updates'] = $allowedUpdates;
+            }
+
+            $response = $this->GetUpdates($params);
+
+            if ($response === false) {
+                $err = $this->GetLastError() ?: 'Connection to Telegram Bot API failed';
+                if (isset($options['on_error']) && is_callable($options['on_error'])) {
+                    call_user_func($options['on_error'], $err, $this, false);
+                }
+                if ($sleepOnError > 0 && $this->isPolling) {
+                    usleep((int)($sleepOnError * 1000000));
+                }
+                continue;
+            }
+
+            $isOk = false;
+            $result = [];
+            if (is_object($response)) {
+                $isOk = !empty($response->ok);
+                $result = $isOk && !empty($response->result) ? $response->result : [];
+            } elseif (is_array($response)) {
+                $isOk = !empty($response['ok']);
+                $result = $isOk && !empty($response['result']) ? $response['result'] : [];
+            }
+
+            if (!$isOk) {
+                $errorCode = is_object($response) ? ($response->error_code ?? null) : ($response['error_code'] ?? null);
+                $errorDesc = is_object($response) ? ($response->description ?? '') : ($response['description'] ?? '');
+
+                if ($errorCode === 429) {
+                    $retryAfter = is_object($response)
+                        ? ($response->parameters->retry_after ?? 5)
+                        : ($response['parameters']['retry_after'] ?? 5);
+
+                    if (isset($options['on_error']) && is_callable($options['on_error'])) {
+                        call_user_func($options['on_error'], "Rate limit reached. Retrying after {$retryAfter}s", $this, $response);
+                    }
+                    if ($this->isPolling) {
+                        sleep((int)$retryAfter);
+                    }
+                    continue;
+                }
+
+                if ($errorCode === 409 && $deleteWebhook) {
+                    $this->DeleteWebHook();
+                    sleep(1);
+                    continue;
+                }
+
+                if (isset($options['on_error']) && is_callable($options['on_error'])) {
+                    call_user_func($options['on_error'], $errorDesc ?: "Telegram API error {$errorCode}", $this, $response);
+                }
+                if ($sleepOnError > 0 && $this->isPolling) {
+                    usleep((int)($sleepOnError * 1000000));
+                }
+                continue;
+            }
+
+            if (!empty($result) && is_array($result)) {
+                foreach ($result as $item) {
+                    if (!$this->isPolling) {
+                        break;
+                    }
+
+                    $updateArray = (is_object($item) || is_array($item))
+                        ? (json_decode(json_encode($item), true) ?: [])
+                        : [];
+
+                    $updateId = $updateArray['update_id'] ?? null;
+                    if ($updateId !== null) {
+                        $this->currentOffset = (int)$updateId + 1;
+                        if ($offsetFile) {
+                            $this->SaveOffset($offsetFile);
+                        }
+                    }
+
+                    $this->SetUpdate($updateArray);
+
+                    $ret = $firstParamIsUpdate
+                        ? call_user_func($callback, $updateArray, $this)
+                        : call_user_func($callback, $this, $updateArray);
+
+                    if ($ret === false) {
+                        $this->isPolling = false;
+                        break;
+                    }
+                }
+            }
+
+            if (isset($options['on_tick']) && is_callable($options['on_tick'])) {
+                call_user_func($options['on_tick'], $this);
+            }
+
+            if ($sleepBetween > 0 && $this->isPolling) {
+                usleep($sleepBetween);
+            }
+        }
+
+        $this->isPolling = false;
+
+        if (isset($options['on_stop']) && is_callable($options['on_stop'])) {
+            call_user_func($options['on_stop'], $this);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Yields updates one by one using a PHP Generator for custom loop workflows.
+     *
+     * Example:
+     *   foreach ($bot->PollUpdates(['timeout' => 30]) as $update) {
+     *       $chatId = $bot->GetChatID();
+     *       $text   = $bot->GetText();
+     *       if ($text === '/stop') break;
+     *   }
+     *
+     * @param array $options Configuration options (same as StartPolling)
+     * @return \Generator Yields each update as an associative array
+     */
+    public function PollUpdates(array $options = [])
+    {
+        $this->isPolling = true;
+        $this->RegisterPollingSignals();
+
+        $deleteWebhook = $options['delete_webhook'] ?? true;
+        $dropPending = !empty($options['drop_pending_updates']);
+        if ($deleteWebhook) {
+            $this->DeleteWebHook($dropPending);
+        }
+
+        if (isset($options['offset'])) {
+            $this->currentOffset = (int)$options['offset'];
+        } elseif (!empty($options['offset_file']) && file_exists($options['offset_file'])) {
+            $this->LoadOffset($options['offset_file']);
+        }
+
+        $timeout = isset($options['timeout']) ? (int)$options['timeout'] : 30;
+        $limit = isset($options['limit']) ? max(1, min(100, (int)$options['limit'])) : 100;
+        $sleepOnError = isset($options['sleep_on_error']) ? (float)$options['sleep_on_error'] : 2.0;
+        $sleepBetween = isset($options['sleep_between_requests']) ? (int)$options['sleep_between_requests'] : 0;
+        $maxIterations = isset($options['max_iterations']) ? (int)$options['max_iterations'] : 0;
+        $allowedUpdates = $options['allowed_updates'] ?? null;
+        $offsetFile = $options['offset_file'] ?? null;
+
+        if (isset($options['on_start']) && is_callable($options['on_start'])) {
+            call_user_func($options['on_start'], $this);
+        }
+
+        $iteration = 0;
+
+        try {
+            while ($this->isPolling) {
+                if ($maxIterations > 0 && $iteration >= $maxIterations) {
+                    break;
+                }
+                $iteration++;
+
+                if (isset($options['stop_condition']) && is_callable($options['stop_condition'])) {
+                    if (call_user_func($options['stop_condition'], $this) === true) {
+                        break;
+                    }
+                }
+
+                $params = [
+                    'offset'  => $this->currentOffset,
+                    'limit'   => $limit,
+                    'timeout' => $timeout,
+                ];
+                if (!empty($allowedUpdates)) {
+                    $params['allowed_updates'] = $allowedUpdates;
+                }
+
+                $response = $this->GetUpdates($params);
+
+                if ($response === false) {
+                    $err = $this->GetLastError() ?: 'Connection to Telegram Bot API failed';
+                    if (isset($options['on_error']) && is_callable($options['on_error'])) {
+                        call_user_func($options['on_error'], $err, $this, false);
+                    }
+                    if ($sleepOnError > 0 && $this->isPolling) {
+                        usleep((int)($sleepOnError * 1000000));
+                    }
+                    continue;
+                }
+
+                $isOk = false;
+                $result = [];
+                if (is_object($response)) {
+                    $isOk = !empty($response->ok);
+                    $result = $isOk && !empty($response->result) ? $response->result : [];
+                } elseif (is_array($response)) {
+                    $isOk = !empty($response['ok']);
+                    $result = $isOk && !empty($response['result']) ? $response['result'] : [];
+                }
+
+                if (!$isOk) {
+                    $errorCode = is_object($response) ? ($response->error_code ?? null) : ($response['error_code'] ?? null);
+                    $errorDesc = is_object($response) ? ($response->description ?? '') : ($response['description'] ?? '');
+
+                    if ($errorCode === 429) {
+                        $retryAfter = is_object($response)
+                            ? ($response->parameters->retry_after ?? 5)
+                            : ($response['parameters']['retry_after'] ?? 5);
+                        if (isset($options['on_error']) && is_callable($options['on_error'])) {
+                            call_user_func($options['on_error'], "Rate limit reached. Retrying after {$retryAfter}s", $this, $response);
+                        }
+                        if ($this->isPolling) {
+                            sleep((int)$retryAfter);
+                        }
+                        continue;
+                    }
+
+                    if ($errorCode === 409 && $deleteWebhook) {
+                        $this->DeleteWebHook();
+                        sleep(1);
+                        continue;
+                    }
+
+                    if (isset($options['on_error']) && is_callable($options['on_error'])) {
+                        call_user_func($options['on_error'], $errorDesc ?: "Telegram API error {$errorCode}", $this, $response);
+                    }
+                    if ($sleepOnError > 0 && $this->isPolling) {
+                        usleep((int)($sleepOnError * 1000000));
+                    }
+                    continue;
+                }
+
+                if (!empty($result) && is_array($result)) {
+                    foreach ($result as $item) {
+                        if (!$this->isPolling) {
+                            break 2;
+                        }
+
+                        $updateArray = (is_object($item) || is_array($item))
+                            ? (json_decode(json_encode($item), true) ?: [])
+                            : [];
+
+                        $updateId = $updateArray['update_id'] ?? null;
+                        if ($updateId !== null) {
+                            $this->currentOffset = (int)$updateId + 1;
+                            if ($offsetFile) {
+                                $this->SaveOffset($offsetFile);
+                            }
+                        }
+
+                        $this->SetUpdate($updateArray);
+
+                        yield $updateArray;
+                    }
+                }
+
+                if (isset($options['on_tick']) && is_callable($options['on_tick'])) {
+                    call_user_func($options['on_tick'], $this);
+                }
+
+                if ($sleepBetween > 0 && $this->isPolling) {
+                    usleep($sleepBetween);
+                }
+            }
+        } finally {
+            $this->isPolling = false;
+            if ($offsetFile && $this->currentOffset > 0) {
+                $this->SaveOffset($offsetFile);
+            }
+            if (isset($options['on_stop']) && is_callable($options['on_stop'])) {
+                call_user_func($options['on_stop'], $this);
+            }
+        }
+    }
+
+    /**
+     * Stops the active polling loop gracefully.
+     *
+     * @return $this
+     */
+    public function StopPolling()
+    {
+        $this->isPolling = false;
+        return $this;
+    }
+
+    /**
+     * Checks if long polling loop is currently active.
+     *
+     * @return bool
+     */
+    public function IsPolling()
+    {
+        return $this->isPolling;
+    }
+
+    /**
+     * Returns the current update offset.
+     *
+     * @return int
+     */
+    public function GetOffset()
+    {
+        return $this->currentOffset;
+    }
+
+    /**
+     * Sets the polling update offset.
+     *
+     * @param int $offset
+     * @return $this
+     */
+    public function SetOffset($offset)
+    {
+        $this->currentOffset = (int)$offset;
+        return $this;
+    }
+
+    /**
+     * Persists the current offset to a local file.
+     *
+     * @param string $filePath
+     * @return bool
+     */
+    public function SaveOffset($filePath)
+    {
+        return @file_put_contents($filePath, (string)$this->currentOffset) !== false;
+    }
+
+    /**
+     * Loads the offset from a local file.
+     *
+     * @param string $filePath
+     * @return int
+     */
+    public function LoadOffset($filePath)
+    {
+        if (file_exists($filePath)) {
+            $val = @file_get_contents($filePath);
+            if ($val !== false && is_numeric(trim($val))) {
+                $this->currentOffset = (int)trim($val);
+            }
+        }
+        return $this->currentOffset;
+    }
+
+    /**
+     * Registers CLI termination signal handlers for graceful shutdown across Windows and POSIX.
+     */
+    protected function RegisterPollingSignals()
+    {
+        if (PHP_SAPI !== 'cli') {
+            return;
+        }
+
+        // POSIX systems (Linux, macOS)
+        if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
+            @pcntl_async_signals(true);
+            $handler = function ($signo) {
+                $this->isPolling = false;
+            };
+            if (defined('SIGINT')) {
+                @pcntl_signal(SIGINT, $handler);
+            }
+            if (defined('SIGTERM')) {
+                @pcntl_signal(SIGTERM, $handler);
+            }
+            if (defined('SIGHUP')) {
+                @pcntl_signal(SIGHUP, $handler);
+            }
+        }
+
+        // Windows CLI (PHP 7.4+)
+        if (function_exists('sapi_windows_set_ctrl_handler') && defined('PHP_WINDOWS_EVENT_CTRL_C')) {
+            @sapi_windows_set_ctrl_handler(function ($event) {
+                if ($event === PHP_WINDOWS_EVENT_CTRL_C || (defined('PHP_WINDOWS_EVENT_CTRL_BREAK') && $event === PHP_WINDOWS_EVENT_CTRL_BREAK)) {
+                    $this->isPolling = false;
+                }
+            });
+        }
     }
 
     /**
@@ -2544,6 +3045,9 @@ class ICBot
         // Avoid sending answerCallbackQuery multiple times for the same callback ID
         if (isset(self::$answeredCallbacks[$callbackid])) {
             return true;
+        }
+        if (count(self::$answeredCallbacks) > 2000) {
+            self::$answeredCallbacks = array_slice(self::$answeredCallbacks, -1000, true);
         }
         self::$answeredCallbacks[$callbackid] = true;
 

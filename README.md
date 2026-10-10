@@ -19,6 +19,7 @@ A lightweight, zero-dependency, modern PHP library for building Telegram bots ba
   - **Verification API (8.2+)**: `verifyUser`, `verifyChat`, `removeUserVerification`, `removeChatVerification`.
   - **Gifts (8.2 - 8.3+)**: `sendGift`, `getAvailableGifts` with channel and upgrade options.
   - **Chat Moderation & Administration**: Member restriction, bans, custom admin titles, invite link management, and batch deletion (`deleteMessages`).
+- **Modern Long Polling Engine**: Built-in event-driven loop (`StartPolling`) and PHP Generator stream (`PollUpdates`) with automatic offset management, webhook clearing, rate-limit backoff, and cross-platform graceful CLI shutdown (POSIX & Windows signals).
 - **Webhook Security**: Built-in secret token validation with `VerifyWebhookSecret()`.
 - **Proxy Support**: Native HTTP, SOCKS4, and SOCKS5 proxy routing with authentication.
 - **Auto Local File Uploads**: Automatically converts local file paths to `CURLFile` for photos, videos, audio, voice notes, animations, and documents.
@@ -148,7 +149,40 @@ if ($bot->IsCommand()) {
 }
 ```
 
-### 3. Sending Media (Local Files, URLs, or File IDs)
+### 3. Modern Long Polling Bot (CLI Daemon or Local Testing)
+
+Run your bot continuously from the terminal without needing an HTTPS domain or port-forwarding:
+
+```php
+use TelegramBot\ICBot;
+
+$bot = new ICBot('YOUR_BOT_TOKEN');
+
+// Event-driven long polling with automatic offset and error handling
+$bot->StartPolling(function (ICBot $bot, array $update) {
+    $chatId = $bot->GetChatID();
+    $text   = $bot->GetText();
+
+    if ($bot->IsCommand('ping')) {
+        $bot->SendMessage($chatId, '🏓 Pong!');
+    } elseif (!empty($text)) {
+        $bot->SendMessage($chatId, "Echo: " . htmlspecialchars($text), 'HTML');
+    }
+}, [
+    'timeout'              => 30,    // 30 seconds HTTP long-poll
+    'delete_webhook'       => true,  // Automatically clears webhook to avoid 409 conflict
+    'drop_pending_updates' => false, // Set to true to ignore backlog on launch
+]);
+
+// Or stream updates using a PHP Generator:
+foreach ($bot->PollUpdates(['timeout' => 30]) as $update) {
+    if ($bot->GetText() === '/ping') {
+        $bot->SendMessage($bot->GetChatID(), '🏓 Pong!');
+    }
+}
+```
+
+### 4. Sending Media (Local Files, URLs, or File IDs)
 
 ```php
 // Local file automatically uploaded via multipart/form-data
@@ -162,7 +196,7 @@ $bot->SendVoice($chatId, 'audio/note.ogg');
 $bot->SendAudio($chatId, 'music/track.mp3', null, null, 180, 'Artist Name', 'Song Title');
 ```
 
-### 4. Interactive Keyboards
+### 5. Interactive Keyboards
 
 ```php
 // Inline Keyboard Builder
@@ -187,7 +221,7 @@ $replyMarkup = $bot->BuildReplyKeyboard([
 $bot->SendMessage($chatId, "Please choose:", null, null, null, null, $replyMarkup);
 ```
 
-### 5. Telegram Stars & Payments
+### 6. Telegram Stars & Payments
 
 ```php
 // Send an invoice for Telegram Stars (XTR)
@@ -211,7 +245,7 @@ $link = $bot->CreateInvoiceLink(
 );
 ```
 
-### 6. Message Reactions & Forum Topics
+### 7. Message Reactions & Forum Topics
 
 ```php
 // Add emoji reaction (Bot API 7.0+)
@@ -226,7 +260,7 @@ $bot->SendMessage($chatId, 'Welcome to the Announcements topic!', null, null, nu
 ]);
 ```
 
-### 7. Universal Endpoint Calling
+### 8. Universal Endpoint Calling
 
 Call any new or upcoming Telegram API method dynamically:
 
@@ -247,7 +281,12 @@ $response = $bot->Endpoint('sendChatAction', [
 | | `SetWebHook($url, $options)` | Register webhook endpoint |
 | | `DeleteWebHook($dropUpdates)` | Remove webhook |
 | | `VerifyWebhookSecret($expectedToken)` | Validate secret token header |
-| | `GetUpdates($options)` | Long-polling updates |
+| | `StartPolling($callback, $options)` | Event-driven long polling daemon |
+| | `PollUpdates($options)` | Generator stream of updates |
+| | `StopPolling()` | Stop active polling gracefully |
+| | `GetOffset()` / `SetOffset($offset)` | Get or set update tracking offset |
+| | `SaveOffset($file)` / `LoadOffset($file)` | Persist update offset to file |
+| | `GetUpdates($options)` | Low-level Telegram getUpdates call |
 | | `GetMe()` | Get bot info (`User` object) |
 | **Messaging** | `SendMessage($chat, $text, $parse, $preview, $notify, $reply, $kbd, $extra)` | Send text message |
 | | `CopyMessage($chat, $from, $msgid, ...)` | Copy any message |
